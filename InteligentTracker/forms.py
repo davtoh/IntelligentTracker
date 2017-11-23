@@ -1,0 +1,185 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# (C) 2017 David Toro <davsamirtor@gmail.com>
+
+# compatibility with python 2 and 3
+from __future__ import division
+from __future__ import print_function
+from __future__ import absolute_import
+from builtins import object
+
+# import build-in modules
+import sys
+
+# import third party modules
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+from .array_utils import is_numpy
+
+# special variables
+# __all__ = []
+__author__ = "David Toro"
+# __copyright__ = "Copyright 2017, The <name> Project"
+# __credits__ = [""]
+__license__ = "GPL"
+# __version__ = "1.0.0"
+__maintainer__ = "David Toro"
+__email__ = "davsamirtor@gmail.com"
+# __status__ = "Pre-release"
+
+
+class EventFigure(object):
+    """
+    fig, ax = plt.subplots(FigureClass=MyFigure)
+    """
+
+    def __init__(self, img=None, title=None, interval=None, func=None, frames=None, fargs=None, blit=None, **kwargs):
+        # super(MyFigure, self).__init__(**kwargs)
+        self._closed = None
+        self._min_interval = 33  # 30 frame per second
+        self._interval = None
+        self.interval = interval  # apply interval limits
+        self._func = func
+        self._frames = frames
+        self._fargs = fargs
+        self._blit = blit
+        self.figure = plt.figure(**kwargs)
+        self.ax = self.figure.add_axes([0, 0, 1, 1], frame_on=False, xticks=[], yticks=[])
+        self.artist = self.ax.imshow(img, animated=True, interpolation="nearest")
+        self.animation = None
+
+        if title is not None:
+            self.set_title(title)
+            
+    def set_title(self, title):
+        # https://stackoverflow.com/a/5812982/5288758
+        self.figure.canvas.set_window_title(title)
+
+    @property
+    def interval(self):
+        return self._interval
+
+    @interval.setter
+    def interval(self, value):
+        if value is not None and value < self._min_interval:
+            value = self._min_interval
+        self._interval = value
+        try:
+            self.animation._interval = value
+            self.animation.event_source.interval = value
+        except AttributeError:
+            pass
+
+    def _update_func(self, *args):
+        # print("setting set")
+        if self._interval:
+            if self._frames:
+                self.artist.set_array(args[0])
+            res = self.update_func(*args)
+            if res is not None:
+                if is_numpy(res):
+                    self.artist.set_array(res)
+                else:
+                    return res
+        if self._blit:
+            return self.artist,
+        else:
+            self.figure.canvas.draw()
+
+    def update_func(self, *args):
+        return
+
+    def key_press_event(self, event):
+        return
+
+    def update(self, img, interval=0.1):
+        self.artist.set_data(img)
+        #self.artist.set_array(img)
+        self.figure.canvas.draw()
+        self.figure.show()
+        self.figure.canvas.start_event_loop(interval)
+
+    def pause(self, interval):
+        self.figure.canvas.start_event_loop(interval)
+
+    def show(self):
+        if self._closed:
+            dummy = plt.figure()
+            new_manager = dummy.canvas.manager
+            new_manager.canvas.figure = self.figure
+            self.figure.set_canvas(new_manager.canvas)
+
+        #self.figure.show()
+        if self._closed is None or self._closed:
+            self.start_event(None)  # run start event
+            
+            # run at first or when creating new images
+            # https://matplotlib.org/examples/event_handling/keypress_demo.html
+            self.figure.canvas.mpl_connect('key_press_event',
+                                           self.key_press_event)
+            # https://matplotlib.org/examples/event_handling/close_event.html
+            self.figure.canvas.mpl_connect('close_event', self._close_event)
+            
+            if self._interval or self._frames or self._func:
+                try:
+                    _blit_cache = self.animation._blit_cache
+                except AttributeError:
+                    _blit_cache = None
+                try:
+                    _save_seq = self.animation._save_seq
+                except AttributeError:
+                    _save_seq = None
+
+                kw = dict(frames=self._frames,
+                          interval=self._interval, fargs=self._fargs,
+                          blit=self._blit)
+                kw = {k:v for k,v in kw.items() if v is not None}
+
+                if self._func is None:
+                    func = self._update_func
+                else:
+                    func = self._func
+
+                self.animation = animation.FuncAnimation(self.figure, func=func, save_count=1, **kw)
+
+                if _blit_cache:
+                    # BUG?　https://stackoverflow.com/a/41543986/5288758
+                    # implement https://stackoverflow.com/a/36587952/5288758
+                    self.animation._blit_cache = _blit_cache
+                if _save_seq:
+                    self.animation._save_seq = _save_seq
+
+                # test function is working
+                #self.animation._func()
+
+        self.figure.show()
+        if self.animation is not None:
+            self.figure.canvas.draw()  # make the animation start
+            #self.animation._start()
+        self._closed = False
+
+    def close(self):
+        # this closes the window
+        # to recover figures when closed use
+        # https://stackoverflow.com/a/31731945/5288758
+        plt.close(self.figure)
+
+    def _close_event(self, event):
+        self.close_event(event)
+        self._closed = True
+
+    def close_event(self, event):
+        return 
+
+    def start_event(self, event):
+        return 
+
+    def is_closed(self):
+        return self._closed
+    
+    def __enter__(self):
+        self.show()
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
