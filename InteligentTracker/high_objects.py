@@ -10,14 +10,13 @@ from builtins import object
 
 # import build-in modules
 import sys
-from past.builtins import basestring
 from numbers import Number
 from time import time
 
 # import third party modules
-from ordered_set import OrderedSet
-from collections import MutableMapping, MutableSet
+from .core import Space, Group
 from .periferials import UnifiedCamera, SyncCameras, PiCamera
+from .detectors import Detector
 import numpy as np
 from threading import Thread, RLock
 from .forms import EventFigure
@@ -36,272 +35,70 @@ __email__ = "davsamirtor@gmail.com"
 # __status__ = "Pre-release"
 
 
-class Space(object):
-    """
-    Anything that is created must have a name attribute and be in the Space
-    """
-    entities = {}
-
-    def __new__(cls, *args, **kwargs):
-        self = super(Space, cls).__new__(cls)
-        self.name = str(id(self))
-        self.entities[self.name] = self
-        return self        
-
-    @property
-    def name(self):
-        try:
-            return self._name
-        except AttributeError:
-            return str(id(self))
-
-    @name.setter
-    def name(self, value):
-        if value and value != self.name:
-            if not isinstance(value, basestring):
-                raise TypeError("name must be a string not {}".format(type(value)))
-            if value in self.entities:
-                raise ValueError("name '{}' already exists".format(value))
-            old_name = self.name
-            # register new name
-            self.entities[value] = self
-            # delete old name
-            del self.entities[old_name]
-            # assign new name
-            self._name = value
-            self._name_event()
-
-    def _name_event(self):
-        return
-    
-
-class Group(Space, MutableSet):
-    """
-    Create group of objects withing the Space
-    """
-    # https://stackoverflow.com/a/3387975/5288758
-    # https://github.com/LuminosoInsight/ordered-set/blob/master/ordered_set.py
-    # TODO: this must only save references
-    # TODO: create callbacks to delete references in groups if they are deleted from the space
-    # TODO: create callbacks to change names in groups if the object name is changed
-    # perhaps creating views from the Space is how a group can be made?
-    # perhaps saving a class object as Name
-
-    def __init__(self, iterable=None):
-        self.items = []
-        self.map = {}
-        if iterable is not None:
-            self |= iterable
-
-    def __len__(self):
-        return len(self.items)
-
-    def __getitem__(self, name):
-        item = self.entities[name]
-        if item in self:
-            return item
-        raise KeyError("name {} is not in Group".format(name))
-
-    def __getitem__(self, index):
-        """
-        Get the item at a given index.
-
-        If `index` is a slice, you will get back that slice of items. If it's
-        the slice [:], exactly the same object is returned. (If you want an
-        independent copy of an OrderedSet, use `OrderedSet.copy()`.)
-
-        If `index` is an iterable, you'll get the OrderedSet of items
-        corresponding to those indices. This is similar to NumPy's
-        "fancy indexing".
-        """
-        if index == slice(None):
-            return self
-        elif hasattr(index, '__index__') or isinstance(index, slice):
-            result = self.items[index]
-            if isinstance(result, list):
-                return type(self)(result)
-            else:
-                return result
-        elif hasattr(index, '__iter__') and not isinstance(index, str) and not isinstance(index, tuple):
-            return type(self)([self.items[i] for i in index])
-        else:
-            raise TypeError("Don't know how to index an OrderedSet by %r" %
-                    index)
-
-    def copy(self):
-        return type(self)(self)
-
-    def __getstate__(self):
-        if len(self) == 0:
-            # The state can't be an empty list.
-            # We need to return a truthy value, or else __setstate__ won't be run.
-            #
-            # This could have been done more gracefully by always putting the state
-            # in a tuple, but this way is backwards- and forwards- compatible with
-            # previous versions of OrderedSet.
-            return (None,)
-        else:
-            return list(self)
-
-    def __setstate__(self, state):
-        if state == (None,):
-            self.__init__([])
-        else:
-            self.__init__(state)
-
-    def __contains__(self, key):
-        return key in self.map
-
-    def add(self, key):
-        """
-        Add `key` as an item to this OrderedSet, then return its index.
-
-        If `key` is already in the OrderedSet, return the index it already
-        had.
-        """
-        if key not in self.map:
-            self.map[key] = len(self.items)
-            self.items.append(key)
-        return self.map[key]
-    append = add
-
-    def update(self, sequence):
-        """
-        Update the set with the given iterable sequence, then return the index
-        of the last element inserted.
-        """
-        item_index = None
-        try:
-            for item in sequence:
-                item_index = self.add(item)
-        except TypeError:
-            raise ValueError('Argument needs to be an iterable, got %s' % type(sequence))
-        return item_index
-
-    def index(self, key):
-        """
-        Get the index of a given entry, raising an IndexError if it's not
-        present.
-
-        `key` can be an iterable of entries that is not a string, in which case
-        this returns a list of indices.
-        """
-        if is_iterable(key):
-            return [self.index(subkey) for subkey in key]
-        return self.map[key]
-
-    def pop(self):
-        """
-        Remove and return the last element from the set.
-
-        Raises KeyError if the set is empty.
-        """
-        if not self.items:
-            raise KeyError('Set is empty')
-
-        elem = self.items[-1]
-        del self.items[-1]
-        del self.map[elem]
-        return elem
-
-    def discard(self, key):
-        """
-        Remove an element.  Do not raise an exception if absent.
-
-        The MutableSet mixin uses this to implement the .remove() method, which
-        *does* raise an error when asked to remove a non-existent item.
-        """
-        if key in self:
-            i = self.map[key]
-            del self.items[i]
-            del self.map[key]
-            for k, v in self.map.items():
-                if v >= i:
-                    self.map[k] = v - 1
-
-    def clear(self):
-        """
-        Remove all items from this OrderedSet.
-        """
-        del self.items[:]
-        self.map.clear()
-
-    def __iter__(self):
-        return iter(self.items)
-
-    def __reversed__(self):
-        return reversed(self.items)
-
-    def __repr__(self):
-        if not self:
-            return '%s()' % (self.__class__.__name__,)
-        return '%s(%r)' % (self.__class__.__name__, list(self))
-
-    def __eq__(self, other):
-        if isinstance(other, OrderedSet):
-            return len(self) == len(other) and self.items == other.items
-        try:
-            other_as_set = set(other)
-        except TypeError:
-            # If `other` can't be converted into a set, it's not equal.
-            return False
-        else:
-            return set(self) == other_as_set
-
-
 class World(Space):
     """
     This is the world, here everything must be contained.
     """
     def __init__(self):
-        self.scenes = Group()
-        self.trackers = Group()
+        self.scenes = Group(_space_parent=self, name="scenes")
+        self.detectors = Group(_space_parent=self, name="detectors")
 
-    def show(self, name=None, *args, **kwargs):
+    def show(self, *args, **kwargs):
+        name = kwargs.pop("name", None)
         if name is None:
             for i in self.scenes:
                 i.show(*args, **kwargs)
         else:
             self.scenes[name].show(*args, **kwargs)
 
-    def close(self, name=None, *args, **kwargs):
+    def close(self, *args, **kwargs):
+        name = kwargs.pop("name", None)
         if name is None:
             for i in self.scenes:
                 i.close(*args, **kwargs)
         else:
             self.scenes[name].close(*args, **kwargs)
 
-    def compute(self, name=None, *args, **kwargs):
+    def compute(self, *args, **kwargs):
+        name = kwargs.pop("name", None)
         if name is None:
             for i in self.scenes:
                 i.compute(*args, **kwargs)
         else:
             self.scenes[name].compute(*args, **kwargs)
 
-    def create_scene(self, name=None, *args, **kwargs):
+    def create_scene(self, *args, **kwargs):
         scene = Scene(*args, **kwargs)
-        if name is not None:
-            scene.name = name
         self.scenes.add(scene)
         return scene
 
-    def create_tracker(self, name=None, *args, **kwargs):
-        tracker = Scene(*args, **kwargs)
-        if name is not None:
-            tracker.name = name
-        self.trackers.add(tracker)
-        return tracker
+    def create_detector(self, *args, **kwargs):
+        detector = Detector(*args, **kwargs)
+        self.detectors.add(detector)
+        return detector
 
-    def assign_tracker_to_scene(self, tracker_name, scene_name):
-        self.scenes[scene_name].add_tracker(self.trackers[tracker_name])
+    def assign_detector_to_scene(self, detector_name, scene_name):
+        self.scenes[scene_name].add_detector(self.detectors[detector_name])
 
-    def objects(self, name=None):
-        if name is None:
-            for tracker in self.trackers:
-                for obj in tracker.objects:
-                    yield obj
+    def objects(self, detector_name=None, object_name=None):
+        if detector_name is not None and object_name is not None:
+            yield self.detectors[detector_name].objects[object_name]
+        elif detector_name is None:
+            for detector in self.detectors:
+                if object_name is None:
+                    for obj in detector.objects:
+                        yield obj
+                else:
+                    try:
+                        yield detector.objects[object_name]
+                        break
+                    except KeyError:
+                        continue
+            else:
+                if object_name is not None:
+                    raise KeyError("object {} not found".format(object_name))
         else:
-            for obj in self.trackers[name].objects:
+            for obj in self.detectors[detector_name].objects:
                 yield obj
 
     def __json_enco__(self):
@@ -573,7 +370,7 @@ class Scene(Space):
                         break
         finally:
             self._stop = True
-            #print("thread {} ended".format(self))
+            print("thread {} ended".format(self))
 
     def start(self):
         # start the thread to read frames from the video stream
@@ -600,7 +397,8 @@ class Scene(Space):
             self.view.close()
 
     def closed(self):
-        return self._stop
+        with self._lock:
+            return self._thread is None or not self._thread.is_alive()
     
     def closed_window(self):
         if self.view:
@@ -662,14 +460,3 @@ class Object(Agent):
             if tracker_type == 'GOTURN':
                 tracker = cv2.TrackerGOTURN_create()
         self.tracker = tracker
-
-
-class Detector(Space):
-    """
-    Here a Detector creates an Object or Entity from the real world
-    which will have its own behaviour or "personality". This Detector is
-    the one that classifies the objects and finds them in the real world
-    if they are "lost" or they are not in the scenes anymore until
-    they reappear again.
-    """
-    pass

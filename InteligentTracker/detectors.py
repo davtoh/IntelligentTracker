@@ -12,6 +12,7 @@ from builtins import object
 import sys
 
 # import third party modules
+from .core import Space, Group
 import cv2
 
 # special variables
@@ -30,11 +31,21 @@ face_cascade = cv2.CascadeClassifier(DETECTOR_PATH+'haarcascade_frontalface_defa
 eye_cascade = cv2.CascadeClassifier(DETECTOR_PATH+'haarcascade_eye.xml')
 
 
-class Detector(object):
+class Detector(Space):
+    """
+    Here a Detector creates an Object or Entity from the real world
+    which will have its own behaviour or "personality". This Detector is
+    the one that classifies the objects and finds them in the real world
+    if they are "lost" or they are not in the scenes anymore until
+    they reappear again.
+    """
     def __init__(self):
         self.parent = None
         self.children = []
         self.objects = []
+
+    def detect_objects(self):
+        pass
 
     def __json_enco__(self):
         pass
@@ -45,7 +56,10 @@ class EyeDetector(Detector):
 
 
 class FaceDetector(Detector):
-    pass
+    def detect_objects(self):
+        faces = face_cascade.detectMultiScale(gray, scaleFactor=1.3,
+                                              minNeighbors=5, minSize=(30, 30),
+                                              flags=cv2.CASCADE_SCALE_IMAGE)
 
 
 class PeopleDetector(Detector):

@@ -55,9 +55,10 @@ class UnifiedCamera(object):
         self.closed = False
 
     def start_preview(self):
-        self._camera.open(self._camera_num)
         if not self._camera.isOpened():
-            raise IOError("camera {} could not be oppened".format(self._camera_num))
+            self._camera.open(self._camera_num)
+        if not self._camera.isOpened():
+            raise IOError("camera {} could not be opened".format(self._camera_num))
         self._camera.read()  # activate it
         self.closed = False
 
@@ -170,6 +171,8 @@ class VideoStream(object):
         self.resolution = resolution
         self.framerate = framerate
         self.rawCapture = PiRGBArray(self.camera, size=resolution)
+        self._warm_up_time = 2
+        self._creation_time = time()
 
         # initialize the frame and the variable used to indicate
         # if the thread should be stopped
@@ -183,6 +186,9 @@ class VideoStream(object):
         self._order = Event()
         self._lock = RLock()
         self._thread = None
+        self._frame_cache = None
+        # the optimization flag lets the camera wait until it is needed
+        self._optimize = True
 
     @property
     def resolution(self):
@@ -202,11 +208,17 @@ class VideoStream(object):
 
     def update(self):
         # initialize events
-        self._order.clear()  # there are not orders yet
-        self._thread_free.set()  # notify thread is free to receive orders
-        toggle = True
+        #toggle = True
         try:
+            df = time() - self._creation_time
+            if df < self._warm_up_time:
+                # allow to warm up if camera is opened too quickly
+                sleep(self._warm_up_time-df)
             self.camera.start_preview()  # start camera
+            self.frame = self.camera.capture(self.rawCapture, self.format)
+            if self.frame is None:
+                raise IOError("camera '{}' not working".format(self.camera))
+            self._thread_free.set()  # notify thread is free to receive orders
             # keep looping infinitely until the thread is stopped
             while not self._stop:
                 # because self.trigger can be shared it is possible that
@@ -215,10 +227,13 @@ class VideoStream(object):
                 # we have to check self.thread_free is not set meaning
                 # that it has to produce a frame, thus it should not
                 # be blocked
-                #if self._thread_free.is_set():
+                if self._optimize:
                 #    self.trigger.clear()  # make the thread wait until event
                 #    #self.__debug("event waiting in {}'s thread".format(id(self)))
-                #    self.trigger.wait()  # wait until read function or event calls
+                    if self.framerate:
+                        self.trigger.wait(1/self.framerate)  # wait until read function or event calls
+                    else:
+                        self.trigger.wait()
                 #    self._thread_free.clear()  # tell thread is busy
                 #    #self.__debug("event was unblocked in {}'s thread".format(id(self)))
                 #    self._order.set()  # there is an order
@@ -235,53 +250,34 @@ class VideoStream(object):
                 # as quickly as possible
                 #self._thread_free.set()
                 self.rawCapture.truncate(0)
+                if self._frame_cache is None and self.trigger.is_set():
+                    self._frame_cache = self.frame
+                    self._order.set()
         finally:
             # ending thread
             #self.rawCapture.close()
             self.camera.close()
-            self._thread_free.set()  # prevents blocking in main
             self._stop = True
+            self._thread_free.set()  # prevents blocking in main
             #print("thread {} ended".format(self))
 
     def read(self):
-        # FIXME: cameras are not synchronised
-        # FIXME: there is a time lag between the real world when framerates are low
-        # even though the frames are low each time it is refreshed should
-        # show exactly the image taken in the real world
-        with self._lock:
-            # send event to read
-            #self.__debug("reading in {}".format(id(self)), start_debug=True)
-            # if thread_free is not set then thread is already producing frame
-            # if thread_free is set but frame is not None then we are forced
-            # to produce new frame
-            if self._stop:
-                raise RuntimeError("{} must be started".format(type(self)))
+        if self.trigger.is_set():
+            self._order.wait()
+            return self._frame_cache
+        return self.frame
 
-            # update frame
-            if self._thread_free.is_set() and not self._order.is_set():  # and self.frame is None:
-                self._thread_free.clear()  # tell thread will be busy
-                self.trigger.set()  # start processing in thread
-                #self.__debug("event set in {}".format(id(self)))
-
-            # give latest frame
-            try:
-                return self.get_frame()
-            finally:
-                if self.frame is None:
-                    self.close()
-                    raise IOError("camera '{}' not working".format(self.camera))
+    def clear_order(self):
+        self._frame_cache = None
+        self._order.clear()
 
     def get_frame(self):
         """
-        safely give frame from latest read. if latest read has not ended
-         it waits for it to end and gives the frame.
+        safely give frame from latest read
         """
-        # wait for latest frame
-        timeout = self._thread_free.wait(3)
-        if not timeout:
-            raise Exception("There was a timeout")
-        self._order.clear()
-        return self.frame
+        if self._stop:
+            raise RuntimeError("{} must be started".format(type(self)))
+        return self.read()
 
     def start(self):
         # start the thread to read frames from the video stream
@@ -289,21 +285,28 @@ class VideoStream(object):
             # if several threads are trying to start it wait
             # if while this lock was waiting and this thread ended in another
             # lock, open the tread again to prevent inconsistencies
-            if self._thread is None or not self._thread.is_alive():
+            if self.closed():
                 self._thread = t = Thread(target=self.update, args=())
                 t.daemon = False
                 self._stop = False  # thread started
                 t.start()
+                self._thread_free.wait()
+                if self._stop:
+                    raise IOError("camera '{}' not ready".format(self.camera))
         return self
 
     def close(self):
         with self._lock:
-            if self._thread is not None and self._thread.is_alive():
+            if not self.closed():
                 # indicate that the thread should be stopped
                 self._stop = True
                 self._thread_free.clear()
                 self.trigger.set()  # un-pause threads
                 self._thread.join()
+
+    def closed(self):
+        with self._lock:
+            return self._thread is None or not self._thread.is_alive()
 
     def __enter__(self):
         self.start()
@@ -327,13 +330,16 @@ class VideoStream(object):
 
 
 class SyncCameras(object):
+    """
+    Synchronize cameras
+    """
     def __init__(self, cameras, resolution=None, framerate=None):
         self._framerate = 30
         self._resolution = None
-        self.event = Event()  # http://effbot.org/zone/thread-synchronization.htm
+        self.trigger = Event()  # http://effbot.org/zone/thread-synchronization.htm
         self.streams = []
         for i in cameras:
-            s = VideoStream(i, trigger=self.event)
+            s = VideoStream(i, trigger=self.trigger)
             self.streams.append(s)
         self.resolutions = resolution
         self.framerate = framerate
@@ -370,10 +376,16 @@ class SyncCameras(object):
 
     def capture(self):
         try:
+            self.trigger.set()
+            # give latest images from trigger
             return [i.read() for i in self.streams]
         except Exception:
             self.close()
             raise
+        finally:
+            self.trigger.clear()  # clear trigger
+            for i in self.streams:
+                i.clear_order()  # clear latest images from trigger
 
     def capture_continuous(self):
         """
@@ -398,8 +410,15 @@ class SyncCameras(object):
             i.close()
 
     def start(self):
-        for i in self.streams:
-            i.start()
+        try:
+            for i in self.streams:
+                i.start()
+        except Exception:
+            self.close()
+            raise
+
+    def closed(self):
+        return all(i.closed() for i in self.streams)
 
     def __enter__(self):
         self.start()
@@ -407,5 +426,23 @@ class SyncCameras(object):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
-    
-    # TODO method to add and remove cameras
+
+    def add_camera(self, camera):
+        s = VideoStream(camera, trigger=self.trigger)
+        if not self.closed():
+            s.start()
+        self.streams.append(s)
+
+    def remove_camera(self, stream):
+        try:
+            i = self.streams.index(stream)
+        except ValueError:
+            # stream is camera here
+            for i, j in enumerate(self.streams):
+                if j.camera == stream:
+                    break
+            else:
+                raise ValueError("{} is not in {}".format(stream, self))
+
+        s = self.streams.pop(i)
+        s.close()
