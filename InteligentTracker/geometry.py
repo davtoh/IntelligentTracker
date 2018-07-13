@@ -128,17 +128,22 @@ def line_intersection(line1, line2, check_inside=True):
     return None
 
 
-def cnt_group(cnt, cnt_cmp):
+def cnt_group(cnt, cnt_cmp, check=False):
     """
     compare cnt pertaining points and give the transitions
 
     :param cnt: testing cnt
     :param cnt_cmp: comparing cnt
+    :param check: True to return immediately if a point from cnt is found
+        inside cnt_cmp and with the found flag added to the returned values,
+        True for found or False for not found and consequently with all the
+        flags and transitions plus the found flag.
     :return: (flags, transitions) where flags are 1 when the points from
         cnt which are in cnt_cmp, 0 when when in the contour and -1 when
         they are not inside. The flag is determined by pointPolygonTest.
         transitions is an list of the indices where a flag changes from
         outside to inside or in the contour and vice versa.
+        if check is True: (flags, transitions, found)
     """
     assert len(cnt) > 1, "contour must have at least 2 points to test transitions"
     transitions = []
@@ -155,8 +160,13 @@ def cnt_group(cnt, cnt_cmp):
         if (flag == -1 and old_flag != -1) or (old_flag == -1 and flag != -1):
             # store where is the transition
             transitions.append(i)
+        if check and flag != -1:
+            # return until flag was found
+            return flags[:i+1], transitions, True
         # update_func flag
         old_flag = flag
+    if check:
+        return flags, transitions, False
     return flags, transitions
 
 
@@ -943,6 +953,71 @@ class Completeness(object):
             c0.give_port_in_index(index0, c1)
 
 
+def cnt_check_intersection(cnt0, cnt1):
+    """
+    check if normal cnt0 and cnt1 intersect
+    """
+    # -1 = outside, 0 = boundary, 1 = inside
+    # fastplt(draw_contour_groups([[cnt0],[cnt1]]), interpolation="nearest")
+
+    # transitions give the id0_i0 i of the transition; line: i, i-1
+    flags0, trans0_raw, found = cnt_group(cnt0, cnt1, True)
+    if found:
+        # fastest route: when a point in contour is inside another
+        return found
+    flags1, trans1_raw, found = cnt_group(cnt1, cnt0, True)
+    if found:
+        # fastest route: when a point in contour is inside another
+        return found
+
+    # pair variables to choose with id
+    trans_raw = trans0_raw, trans1_raw
+    cnts = cnt0, cnt1
+    flags = flags0, flags1
+
+    # select id as first contour that must have transitions
+    id = 0
+    if trans1_raw:
+        id = 1
+
+    # selected variables with id
+    id0, id1 = int(id), int(not id)
+    id0_c, id1_c = cnts[id0], cnts[id1]
+    id0_f, id1_f = flags[id0], flags[id1]
+
+    # check
+    if np.alltrue(id0_f == -1):  # all_outside0:
+        id0_trans_raw = np.arange(len(id0_f))
+    else:
+        id0_trans_raw = trans_raw[id0]
+
+    if np.alltrue(id1_f == -1):  # all_outside1:
+        id1_trans_raw = np.arange(len(id1_f))
+    else:
+        id1_trans_raw = trans_raw[id1]
+
+    # test connections
+    for i0, tr0 in enumerate(id0_trans_raw):
+        # get indexes in id0
+        id0_i0, id0_i1 = tr0, ((tr0 - 1) % len(id0_f))
+        for i1, tr1 in enumerate(id1_trans_raw):
+
+            # get indexes in id1
+            id1_i0, id1_i1 = tr1, ((tr1 - 1) % len(id1_f))
+
+            # create line 0 in intersection
+            l0a, l0b = id0_c[id0_i0], id0_c[id0_i1]
+            l0 = norm_point(l0a), norm_point(l0b)
+
+            # create line 1 in intersection
+            l1a, l1b = id1_c[id1_i0], id1_c[id1_i1]
+            l1 = norm_point(l1a), norm_point(l1b)
+
+            # get intersection
+            if line_intersection(l0, l1, check_inside=True) is not None:
+                return True
+
+
 def cnt_intersection(cnt0, cnt1):
     """
     intersect cnt0 with cnt1
@@ -1234,7 +1309,7 @@ def cnt_intersection(cnt0, cnt1):
                 raise IncompleteAssociations("Could not solve conns and lines")
             completeness.create_associations()
     except IncompleteAssociations:
-        # TODO: this is for debbugging
+        # this is for debugging
         from InteligentTracker.figures import interactive_points
         from InteligentTracker.array_utils import draw_contour_groups
         interactive_points(draw_contour_groups([[cnt0], [cnt1]]), lines+conns)
@@ -1301,7 +1376,7 @@ def mixed_intersections(contours, method, img):
 
 def draw_drawContours(img, cnt):
     """drawing function used to draw cnt"""
-    return cv2.drawContours(img.copy(), [cnt], -1, 1, -1)
+    return cv2.drawContours(img, [cnt], -1, 1, -1)
 
 
 def draw_fillConvexPoly(img, cnt):
@@ -1313,12 +1388,12 @@ def draw_fillConvexPoly(img, cnt):
     :param cnt:
     :return:
     """
-    return cv2.fillConvexPoly(img.copy(), cnt, 1, cv2.LINE_4)
+    return cv2.fillConvexPoly(img, cnt, 1, cv2.LINE_4)
 
 
 def draw_fillPoly(img, cnt):
     """drawing function used to draw cnt"""
-    return cv2.fillPoly(img.copy(), [cnt], 1, cv2.LINE_4)
+    return cv2.fillPoly(img, [cnt], 1, cv2.LINE_4)
 
 
 def intersect_AND(img, contours, function=draw_drawContours):

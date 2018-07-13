@@ -6,6 +6,7 @@
 from __future__ import division
 from __future__ import print_function
 from __future__ import absolute_import
+from past.builtins import basestring
 
 # import build-in modules
 import sys
@@ -57,8 +58,12 @@ def get_obj_module_name(obj):
         return type(obj).__module__  # for old-style
 
 
-def register_json_class(class_obj):
+def register_json_class(class_obj, compatibility_name=None):
     extended_json_classes[class_obj.__name__] = class_obj
+    if compatibility_name is not None:
+        if not isinstance(compatibility_name, basestring):
+            raise TypeError("compatibility_name must be string")
+        extended_json_classes[compatibility_name] = class_obj
 
 
 def register_json_watcher(class_obj, enco=None, deco=None):

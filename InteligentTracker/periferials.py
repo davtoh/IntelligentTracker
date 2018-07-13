@@ -30,12 +30,17 @@ __email__ = "davsamirtor@gmail.com"
 # __status__ = "Pre-release"
 
 
+class CameraError(Exception):
+    pass
+
+
 class UnifiedCamera(object):
     """
     Emulate PiCamera in a system that does not have PiCamera support
     with a normal cv2.VideoCapture supported by OpenCV
     """
     # https://github.com/waveform80/picamera/blob/master/picamera/camera.py
+    # https://www.pyimagesearch.com/2015/03/30/accessing-the-raspberry-pi-camera-with-opencv-and-python/
     def __init__(self, camera_num=None):
         self.resolution = None
         self.framerate = None
@@ -46,21 +51,21 @@ class UnifiedCamera(object):
                     break
                 _camera.release()
             else:
-                raise IOError("no camera found")
+                raise CameraError("no camera found")
         else:
             _camera = cv2.VideoCapture(camera_num)
 
         self._camera_num = camera_num
         self._camera = _camera
-        self.closed = False
+        self._closed = False
 
     def start_preview(self):
         if not self._camera.isOpened():
             self._camera.open(self._camera_num)
         if not self._camera.isOpened():
-            raise IOError("camera {} could not be opened".format(self._camera_num))
+            raise CameraError("camera {} could not be opened".format(self._camera_num))
         self._camera.read()  # activate it
-        self.closed = False
+        self._closed = False
 
     def capture(self, rawCapture, format="jpeg",
                            use_video_port=False):
@@ -105,7 +110,10 @@ class UnifiedCamera(object):
 
     def close(self):
         self._camera.release()
-        self.closed = True
+        self._closed = True
+
+    def closed(self):
+        return self._closed
 
     def __enter__(self):
         self.start_preview()
@@ -159,7 +167,7 @@ except ImportError:
 class VideoStream(object):
 
     def __init__(self, src=None, usePiCamera=False, resolution=(320, 240),
-                 framerate=30, format='rgb', trigger=None):
+                 framerate=30, format='bgr', trigger=None):
         # initialize the camera and stream
         if usePiCamera:
             self.camera = PiCamera()
@@ -206,7 +214,8 @@ class VideoStream(object):
     def framerate(self, value):
         self.camera.framerate = value
 
-    def update(self):
+    def _update_func(self):
+        #print("camera thread {} started".format(self._thread))
         # initialize events
         #toggle = True
         try:
@@ -217,7 +226,7 @@ class VideoStream(object):
             self.camera.start_preview()  # start camera
             self.frame = self.camera.capture(self.rawCapture, self.format)
             if self.frame is None:
-                raise IOError("camera '{}' not working".format(self.camera))
+                raise CameraError("camera '{}' not working".format(self.camera))
             self._thread_free.set()  # notify thread is free to receive orders
             # keep looping infinitely until the thread is stopped
             while not self._stop:
@@ -233,7 +242,7 @@ class VideoStream(object):
                     if self.framerate:
                         self.trigger.wait(1/self.framerate)  # wait until read function or event calls
                     else:
-                        self.trigger.wait()
+                        self.trigger.wait(10)
                 #    self._thread_free.clear()  # tell thread is busy
                 #    #self.__debug("event was unblocked in {}'s thread".format(id(self)))
                 #    self._order.set()  # there is an order
@@ -259,7 +268,8 @@ class VideoStream(object):
             self.camera.close()
             self._stop = True
             self._thread_free.set()  # prevents blocking in main
-            #print("thread {} ended".format(self))
+            self._order.set()  # prent blocking in main
+            #print("camera thread {} ended".format(self._thread))
 
     def read(self):
         if self.trigger.is_set():
@@ -286,13 +296,14 @@ class VideoStream(object):
             # if while this lock was waiting and this thread ended in another
             # lock, open the tread again to prevent inconsistencies
             if self.closed():
-                self._thread = t = Thread(target=self.update, args=())
+                self._thread = t = Thread(target=self._update_func, args=())
                 t.daemon = False
                 self._stop = False  # thread started
+                self._thread_free.clear()
                 t.start()
-                self._thread_free.wait()
+                self._thread_free.wait(10)
                 if self._stop:
-                    raise IOError("camera '{}' not ready".format(self.camera))
+                    raise CameraError("camera '{}' not ready".format(self.camera))
         return self
 
     def close(self):
@@ -302,7 +313,9 @@ class VideoStream(object):
                 self._stop = True
                 self._thread_free.clear()
                 self.trigger.set()  # un-pause threads
-                self._thread.join()
+                self._thread.join(10)
+                if not self.closed():
+                    raise Exception("Thread didn't close")
 
     def closed(self):
         with self._lock:
@@ -379,9 +392,9 @@ class SyncCameras(object):
             self.trigger.set()
             # give latest images from trigger
             return [i.read() for i in self.streams]
-        except Exception:
+        except Exception as e:
             self.close()
-            raise
+            raise e
         finally:
             self.trigger.clear()  # clear trigger
             for i in self.streams:
@@ -393,7 +406,7 @@ class SyncCameras(object):
         """
         diff_time = 1/self.framerate  # second / frame per second
         timer = time() + diff_time  # do not wait in first frame
-        while True:
+        while not any(i.closed() for i in self.streams):
             timer_new = time()
             elapsed = (timer_new - timer)
             diff_time = 1 / self.framerate  # allow to change
@@ -413,9 +426,9 @@ class SyncCameras(object):
         try:
             for i in self.streams:
                 i.start()
-        except Exception:
+        except Exception as e:
             self.close()
-            raise
+            raise e
 
     def closed(self):
         return all(i.closed() for i in self.streams)

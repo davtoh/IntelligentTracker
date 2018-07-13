@@ -10,8 +10,11 @@ from builtins import object
 
 # import build-in modules
 import sys
+from time import sleep
 
 # import third party modules
+import matplotlib as _matplotlib
+_matplotlib.use('QT5Agg')  # FIXME not all back end working: tk is not thread safe
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from .array_utils import is_numpy
@@ -28,12 +31,36 @@ __email__ = "davsamirtor@gmail.com"
 # __status__ = "Pre-release"
 
 
+pause = plt.pause
+
+
+def block(interval=0.1, conditions=None):
+    """
+    Block until the conditions are met. If there are not conditions
+    blocks until all windows are closed.
+
+    If there is an active figure it will be updated and displayed,
+    and the GUI event loop will run during the pause.
+
+    :param interval: interval to check conditions
+    :param conditions: list of functions returning True or False
+    :return:
+    """
+    if conditions is None:
+        while True:
+            pause(interval)
+    else:
+        while any((not i() for i in conditions)):
+            pause(interval)
+
+
 class EventFigure(object):
     """
     fig, ax = plt.subplots(FigureClass=MyFigure)
     """
 
-    def __init__(self, img=None, title=None, interval=None, func=None, frames=None, fargs=None, blit=None, **kwargs):
+    def __init__(self, img=None, title=None, interval=None, func=None,
+                 frames=None, fargs=None, blit=None, **kwargs):
         # super(MyFigure, self).__init__(**kwargs)
         self._closed = None
         self._min_interval = 33  # 30 frame per second
@@ -43,17 +70,25 @@ class EventFigure(object):
         self._frames = frames
         self._fargs = fargs
         self._blit = blit
-        self.figure = plt.figure(**kwargs)
+        self._title = title
+        self.figure = plt.figure(num=title, **kwargs)
         self.ax = self.figure.add_axes([0, 0, 1, 1], frame_on=False, xticks=[], yticks=[])
         self.artist = self.ax.imshow(img, animated=True, interpolation="nearest")
         self.animation = None
 
-        if title is not None:
-            self.set_title(title)
-            
-    def set_title(self, title):
+    @property
+    def title(self):
+        return self._title
+
+    @title.setter
+    def title(self, value):
         # https://stackoverflow.com/a/5812982/5288758
-        self.figure.canvas.set_window_title(title)
+        self.figure.canvas.set_window_title(value)
+        self._title = value
+
+    @title.deleter
+    def title(self):
+        del self._title
 
     @property
     def interval(self):
@@ -104,7 +139,7 @@ class EventFigure(object):
 
     def show(self):
         if self._closed:
-            dummy = plt.figure()
+            dummy = plt.figure(num=self.title)
             new_manager = dummy.canvas.manager
             new_manager.canvas.figure = self.figure
             self.figure.set_canvas(new_manager.canvas)
@@ -174,7 +209,7 @@ class EventFigure(object):
     def start_event(self, event):
         return 
 
-    def is_closed(self):
+    def closed(self):
         return self._closed
     
     def __enter__(self):

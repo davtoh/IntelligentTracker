@@ -18,7 +18,7 @@ from abc import ABCMeta
 from functools import wraps
 from threading import RLock
 from ordered_set import OrderedSet
-from collections import MutableMapping, MutableSet, namedtuple, OrderedDict
+from collections import MutableMapping, MutableSet, namedtuple, OrderedDict, deque
 from weakref import ref, WeakValueDictionary, KeyedRef, _IterationGuard  # https://stackoverflow.com/a/36788452/5288758
 
 # import third party modules
@@ -42,6 +42,53 @@ __license__ = "GPL"
 __maintainer__ = "David Toro"
 __email__ = "davsamirtor@gmail.com"
 # __status__ = "Pre-release"
+
+
+#class HashableDict(dict):
+#    def __hash__(self):
+#        return id(self)
+#
+#
+#class HashableOrderedDict(OrderedDict):
+#    def __hash__(self):
+#        return id(self)
+
+
+class SpaceHandle(MutableMapping):
+    """handle names"""
+    # https://stackoverflow.com/a/3387975/5288758
+
+    def __init__(self, parent, handle):
+        self.parent = parent
+        self.handle = handle
+
+    def change_name(self, old_name, new_name, obj):
+        self.handle[new_name] = self.handle.pop(old_name)
+
+    def remove_name(self, name):
+        #self.handle.pop(name)
+        self.parent._space_remove_child(self.handle[name]())
+
+    def __getitem__(self, key):
+        return self.handle[self.__keytransform__(key)]
+
+    def __setitem__(self, key, value):
+        self.handle[self.__keytransform__(key)] = value
+
+    def __delitem__(self, key):
+        del self.handle[self.__keytransform__(key)]
+
+    def __iter__(self):
+        return iter(self.handle)
+
+    def __len__(self):
+        return len(self.handle)
+
+    def __keytransform__(self, key):
+        return key
+
+    def __hash__(self):
+        return id(self)
 
 
 class WeakWatcher(KeyedRef):
@@ -161,6 +208,9 @@ class WeakRefDictionary(WeakWatcherDictionary):
     # checks (if the other dictionary is a WeakValueDictionary,
     # objects are unwrapped on the way out, and we always wrap on the
     # way in).
+
+    def __hash__(self):
+        return id(self)
 
     def __getitem__(self, key):
         wr = self.data[key]
@@ -288,13 +338,19 @@ class Space(with_metaclass(MetaSpace, object)):
 
     def __new__(cls, *args, **kwargs):
         self = super(Space, cls).__new__(cls)
-        self._space_parent_ = None
+        self._space_parent_ = None  # Space object can only have one parent
         self._space_entities[str(id(self))] = self
-        self._space_children = WeakRefDictionary()
-        self._space_name_handles = []
+        self._space_children = SpaceHandle(self, WeakRefDictionary())  # Space children
+        self._space_name_handles = set()  # Space positions
         return self
 
     def _space_correct_hierarchy(self, old_hierarchy):
+        """
+        private function used to correct an old hierarchy of this
+        object and all its children.
+
+        :param old_hierarchy: string of the previous hierarchy
+        """
         # register new hierarchy
         new_hierarchy = self._space_hierarchy()
         # change old hierarchy
@@ -316,6 +372,7 @@ class Space(with_metaclass(MetaSpace, object)):
 
     @name.setter
     def name(self, value):
+        """change name of object which by default is id"""
         if value and value != self.name:
 
             # check it is a valid name
@@ -344,7 +401,8 @@ class Space(with_metaclass(MetaSpace, object)):
             old_name = self.name
             # correct name in handles
             for handle in self._space_name_handles:
-                handle[value] = handle.pop(old_name)
+                handle.change_name(old_name, value, self)
+                #handle[value] = handle.pop(old_name)
 
             # METHOD: HIERARCHICAL
             # get old hierarchy
@@ -362,10 +420,13 @@ class Space(with_metaclass(MetaSpace, object)):
 
     def _space_hierarchy(self, key=None, use_name=True):
         """
-        get hierarchy
-        :param key:
-        :param use_name:
-        :return:
+        get hierarchy of this object
+
+        :param key: name of append in hierarchy. None to not append
+        :param use_name: whether to use the name of this object. That is
+            if True get the hierarchy until me and append key=child,
+            if False get the hierarchy until parent and append key=brother
+        :return: hierarchy
         """
         # support to find parent hierarchy
         parent = self._space_parent_
@@ -377,19 +438,39 @@ class Space(with_metaclass(MetaSpace, object)):
             train.append(key)
         return ".".join(train)
 
-    def _space_hierarchy_in_space(self, future_hierarchy):
+    def _space_hierarchy_in_space(self, hierarchy):
+        """
+        check a hierarchy is already in the space
+
+        :param hierarchy: string of hierarchy
+        :return: True if hierarchy in space else False
+        """
         # do not proceed if there is a conflict in hierarchy
-        if future_hierarchy in self._space_entities:
+        if hierarchy in self._space_entities:
             # ensure hierarchy is updated to use self._space_entities
             if self._space_collect_entities:
                 self._space_collect()
             # previous evaluation was lazy, this ones evaluates
             # with updated self._space_entities
-            return future_hierarchy in self._space_entities
+            return hierarchy in self._space_entities
         else:
             return False
         
     def _space_get_item(self, key=None):
+        """
+        get an name from space of object and their children.
+
+        :param key: string of Space object name to lookup. Use "."
+            to move under a parent or separate parents using a list.
+             Use "*" to find possible matches.
+            e.g. "Grand-space-parent.space-parent.my name"
+                ["Grand-space-parent","space-parent","my name"]
+                "Grand-space-parent.space-parent.my*e"
+                ["Grand-space-parent","space-parent","my*e"]
+                "Grand-space-parent.space-pa*"
+                ["Grand-space-parent","space-pa*"]
+        :return:
+        """
 
         if isinstance(key, basestring):
             # METHOD: HIERARCHICAL
@@ -411,6 +492,17 @@ class Space(with_metaclass(MetaSpace, object)):
 
     @combomethod
     def _space_get_from_hierarchy(self, key):
+        """
+        get an name from hierarchy of object. If called from class
+        it looks-up object starting from outer Space.
+
+        :param key: string of Space object name to lookup. Use "."
+            to move under a parent and "*" to find possible matches.
+            e.g. "Grand-parent.parent.my name"
+                "Grand-parent.parent.my*e"
+                "Grand-parent.pa*"
+        :return:
+        """
         # https://stackoverflow.com/a/7374385/5288758
         if isinstance(self, Space):
             # get parent hierarchy instead of current hierarchy
@@ -439,6 +531,12 @@ class Space(with_metaclass(MetaSpace, object)):
 
     @_space_parent.setter
     def _space_parent(self, value):
+        """
+        add a parent to this object to appear in its hierarchy as
+        a child.
+
+        :param value: parent Space object. None to specify outer Space
+        """
         if value is Space:
             value = None
         if value != self._space_parent_:
@@ -483,6 +581,12 @@ class Space(with_metaclass(MetaSpace, object)):
             self._parent_changed_event(old_parent)
 
     def _space_parent_in_parents(self, parent):
+        """
+        check a parent is already in the family tree of this object
+
+        :param parent: parent to check in tree
+        :return: True if parent in tree else False
+        """
         # do not proceed if there is circular reference for parent
         parent_ = parent._space_parent_
         if parent_ is None:
@@ -494,6 +598,12 @@ class Space(with_metaclass(MetaSpace, object)):
             return self._space_parent_in_parents(parent_)
 
     def _space_add_child(self, child):
+        """
+        add an object in the internal children to appear in the Space
+        as inside this object.
+
+        :param child: child Space object
+        """
         name = child.name
         if name in self._space_children:
             if self._space_children[name]() is not child:
@@ -508,9 +618,15 @@ class Space(with_metaclass(MetaSpace, object)):
         child_ref = WeakWatcherWithData(child)
         child_ref._count = 0
         self._space_children[name] = child_ref
-        child._space_name_handles.append(self._space_children)
+        child._space_name_handles.add(self._space_children)
 
     def _space_remove_child(self, child):
+        """
+        remove an object in the internal children to disappear in the Space
+        as inside this object.
+
+        :param child: child Space object
+        """
         name = child.name
         struct = self._space_children[name]
         struct._count -= 1
@@ -518,10 +634,33 @@ class Space(with_metaclass(MetaSpace, object)):
             del self._space_children[name]
             child._space_name_handles.remove(self._space_children)
 
+    def _space_delete(self):
+        """
+        delete Space object to outer Space. That is from all Space
+        objects like Groups, parents and containers.
+        """
+        self._space_parent = None  # break any parent relationship
+        name = self.name
+        # delete object from all handles, that is the Space in general
+        # self._space_name_handles will change size until it reaches 0
+        for handle in list(self._space_name_handles):
+            handle.remove_name(name)
+
     def _name_changed_event(self, old_name):
+        """
+        called when name is changed
+
+        :param old_name: old name of object. new name cam be accessed
+            as object.name
+        """
         return
 
     def _parent_changed_event(self, old_parent):
+        """
+        called when parent is changed
+
+        :param old_parent: old parent of object. If None it is outer Space
+        """
         return
 
 
@@ -546,9 +685,41 @@ def deco_name(func, ismethod=True):
     return _func
 
 
+class GroupHandle(SpaceHandle):
+
+    def change_name(self, old_name, new_name, obj):
+
+        dict_to_update = self.parent.names
+        if self.handle is dict_to_update and isinstance(dict_to_update, OrderedDict):
+            # ordered dict cannot be destroyed and must keep the same order
+            i = self.parent.index(old_name)
+            items = list(dict_to_update.items())
+            old_name_, val = items[i]
+            if old_name != old_name_ or obj is not val:
+                raise RuntimeError("Group change_name operation failed "
+                                   "because its index method is broken")
+            items[i] = (new_name, val)  # update new name
+            # because OrderedDict order cannot be altered
+            # then we need to clear it and re-insert the items
+            dict_to_update.clear()
+            dict_to_update.update(items)
+        else:
+            # assume it is a simple dict
+            self.handle[new_name] = self.handle.pop(old_name)
+
+    def remove_name(self, name):
+        self.parent.discard(name)
+
+
 class Group(Space, MutableSet):
     """
-    Create group of objects withing the Space
+    Create group of objects withing the Space. This group can contain Space
+    objects and organize them hierarchically by assigning them as children,
+    as contained or simply adding them as private objects which cannot be
+    looked up in the Space.
+
+    The Group can be seen as an Ordered set that can iterate them as list
+    and retrieve objects by name or reference as in dictionaries.
     """
     # https://stackoverflow.com/a/3387975/5288758
     # https://github.com/LuminosoInsight/ordered-set/blob/master/ordered_set.py
@@ -572,12 +743,24 @@ class Group(Space, MutableSet):
         # dictionary-like object to allocate names
         if not hasattr(self, "names"):
             self.names = OrderedDict()
+        # wrap names to a handle registered to this Group
+        self._group_handle = self._create_group_handle(self.names)
 
         # allocate new data in Group
         if iterable is not None:
             #self |= iterable
             self.update(iterable, as_parent=as_parent,
                         as_contained=as_contained)
+
+    def _create_group_handle(self, handle):
+        """
+        create a GroupHandle wrapping a normal handle to this Group
+
+        :param handle: dictionary-like handle to be wrapped and
+            registered to this Group
+        :return: GroupHandle instance
+        """
+        return GroupHandle(self, handle)
 
     def give_remove_handle(self, key):
         """
@@ -598,6 +781,9 @@ class Group(Space, MutableSet):
         return remove
 
     def _commit_removals(self):
+        """
+        remove pending removals when it is safe
+        """
         l = self._pending_removals
         # We shouldn't encounter any KeyError, because this method should
         # always be called *before* mutating the dict.
@@ -612,7 +798,7 @@ class Group(Space, MutableSet):
     def __len__(self):
         return len(self.names)
 
-    def __getitem__name(self, name):
+    def _getitem_name(self, name):
         """
         this is used instead of self.names[key]
         to show the user an adequate error
@@ -636,7 +822,7 @@ class Group(Space, MutableSet):
         """
         if isinstance(index, basestring):
             # if looking by name
-            return self.__getitem__name(index)
+            return self._getitem_name(index)
         elif hasattr(index, '__index__') or isinstance(index, slice):
             # if asked for a slice of the data
             # it is not returned in the same class as they are registered
@@ -645,10 +831,10 @@ class Group(Space, MutableSet):
         elif hasattr(index, '__iter__'):
             # if asked for a list of the elements
             return [self[i] for i in index]
-        else:
+        elif isinstance(index, Space) and self._getitem_name(index.name) is index:
             # if index is an object, for membership check
-            if self.__getitem__name(index.name) is index:
-                return index
+            return index
+        else:
             raise KeyError("'{}' is not in {}".format(index, self))
 
     def copy(self):
@@ -704,9 +890,7 @@ class Group(Space, MutableSet):
 
     def _safe_add(self, key):
         """
-        Add `key` as an item to this Group, then return the key.
-
-        If `key` is already in the Group, does not adds and returns the key
+        implementation of add method to be run safely
         """
         if not isinstance(key, Space):
             raise TypeError("object must be from Space not '{}'".format(key))
@@ -716,10 +900,15 @@ class Group(Space, MutableSet):
                                  "with name '{}' in this Group".format(key.name))
         else:
             self.names[key.name] = key
-            key._space_name_handles.append(self.names)
+            key._space_name_handles.add(self._group_handle)
         return key
 
     def add(self, key):
+        """
+        Add `key` as an item to this Group, then return the key.
+
+        If `key` is already in the Group, does not adds and returns the key
+        """
         if self._iterating:
             self._pending_removals.append((1, lambda: self._safe_add(key)))
         else:
@@ -768,18 +957,21 @@ class Group(Space, MutableSet):
 
     def _safe_pop(self):
         """
-        Remove and return the last element from the Group.
-
-        Raises KeyError if the Group is empty.
+        implementation of pop method to be run safely
         """
         if not self.names:
             raise KeyError('Group is empty')
 
         key, value = self.names.popitem()
-        value._space_name_handles.remove(self.names)
+        value._space_name_handles.remove(self._group_handle)
         return value
 
     def pop(self):
+        """
+        Remove and return the last element from the Group.
+
+        Raises KeyError if the Group is empty.
+        """
         if self._iterating:
             self._pending_removals.append((1, self._safe_pop))
         else:
@@ -787,20 +979,25 @@ class Group(Space, MutableSet):
 
     def _safe_discard(self, key):
         """
+        implementation of discard method to be run safely
+        """
+        if not isinstance(key, basestring):
+            key = key.name
+
+        try:
+            value = self.names.pop(key)
+        except KeyError:
+            return
+        value._space_name_handles.remove(self._group_handle)
+        return value  # sets return None but this can return value
+
+    def discard(self, value):
+        """
         Remove an element.  Do not raise an exception if absent.
 
         The MutableSet mixin uses this to implement the .remove() method, which
         *does* raise an error when asked to remove a non-existent item.
         """
-        if key not in self:
-            return
-        if not isinstance(key, basestring):
-            key = key.name
-
-        value = self.names.pop(key)
-        value._space_name_handles.remove(self.names)
-
-    def discard(self, value):
         if self._iterating:
             self._pending_removals.append((0, value))
         else:
@@ -808,36 +1005,54 @@ class Group(Space, MutableSet):
 
     def _safe_clear(self):
         """
-        Remove all items from this Group.
+        implementation of clear method to be run safely
         """
         for i in self.names.values():
-            i._space_name_handles.remove(self.names)
+            i._space_name_handles.remove(self._group_handle)
         self.names.clear()
 
     def clear(self):
+        """
+        Remove all items from this Group.
+        """
         if self._iterating:
             self._pending_removals.append((1, self._safe_clear))
         else:
             return self._safe_clear()
 
+    def clear_in_space(self):
+        """
+        clear objects from group, other groups and space
+        """
+        for o in self:
+            o._space_delete()
+
     def _safe_iter(self):
+        """
+        implementation of __iter__ method to be run safely
+        """
         return self.names.values()
 
     def __iter__(self):
         def safe_iter(self):
+            res = None
             try:
-                self.lock_iteration.acquire(blocking=False)
+                res = self.lock_iteration.acquire(blocking=False)
                 with _IterationGuard(self):
                     for i in self._safe_iter():
                         yield i
             finally:
-                self.lock_iteration.release()
+                if res:
+                    self.lock_iteration.release()
         return iter(safe_iter(self))
 
+    def reverse(self):
+        items = list(reversed(self.names.items()))
+        self.names.clear()
+        self.names.update(items)
+
     def __reversed__(self):
-        # this destroys previous OrderedDict
-        self.names = OrderedDict(reversed(self.names.items()))
-        return list(self)
+        return reversed(self.names.values())
 
     def __repr__(self):
         if not self:
@@ -873,18 +1088,20 @@ class Group(Space, MutableSet):
 
 class CompleteGroup(Group):
     """
-    Create group of objects withing the Space
+    Class to create Groups with faster facilities for indexing
+    and retrieving from indexes (faster retrieval) at the expense of slightly
+    slower times when adding Space objects and an slight increase of memory
+    usage. The difference with a pure Group is negligible when managing small
+    amounts of data. Use this class when the focus is manipulating indexes and
+    comparing data withing or among Groups. For intensive adding and removal
+    of objects use a pure Group.
     """
-    # https://stackoverflow.com/a/3387975/5288758
-    # https://github.com/LuminosoInsight/ordered-set/blob/master/ordered_set.py
-    # TODO: create callbacks to delete references in groups if they are deleted from the space
-    # consider https://stackoverflow.com/a/11560258/5288758
 
-    def __init__(self, iterable=None):
+    def __init__(self, iterable=None, as_parent=False, as_contained=False):
         self.items = []  # keep items
         self.map = {}  # keep item and indexes
-        self.names = {}  # keep index names and items
-        super(CompleteGroup, self).__init__(iterable)
+        self.names = dict()  # keep index names and items
+        super(CompleteGroup, self).__init__(iterable, as_parent, as_contained)
 
     def __getitem__(self, index):
         """
@@ -900,7 +1117,7 @@ class CompleteGroup(Group):
         """
         if isinstance(index, basestring):
             # if looking by name
-            return self.__getitem__name(index)
+            return self._getitem_name(index)
         elif hasattr(index, '__index__') or isinstance(index, slice):
             # if asked for a slice of the data
             # it is not returned in the same class as they are registered
@@ -938,9 +1155,7 @@ class CompleteGroup(Group):
 
     def _safe_add(self, key):
         """
-        Add `key` as an item to this Group, then return its index.
-
-        If `key` is already in the Group, return the index it already had.
+        implementation of add method to be run safely
         """
         if not isinstance(key, Space):
             raise TypeError("object must be from Space not '{}'".format(key))
@@ -950,16 +1165,14 @@ class CompleteGroup(Group):
                                  "with name '{}' in this Group".format(key.name))
         else:  # if key not in self.map:
             self.names[key.name] = key
-            key._space_name_handles.append(self.names)
+            key._space_name_handles.add(self._group_handle)
             self.map[key] = len(self.items)
             self.items.append(key)
         return self.map[key]
 
     def _safe_pop(self):
         """
-        Remove and return the last element from the Group.
-
-        Raises KeyError if the Group is empty.
+        implementation of pop method to be run safely
         """
         if not self.items:
             raise KeyError('Group is empty')
@@ -968,43 +1181,55 @@ class CompleteGroup(Group):
         del self.items[-1]
         del self.map[elem]
         del self.names[elem.name]
-        elem._space_name_handles.remove(self.names)
+        elem._space_name_handles.remove(self._group_handle)
         return elem
 
     def _safe_discard(self, key):
         """
-        Remove an element.  Do not raise an exception if absent.
-
-        The MutableSet mixin uses this to implement the .remove() method, which
-        *does* raise an error when asked to remove a non-existent item.
+        implementation of discard method to be run safely
         """
         if isinstance(key, basestring):
             try:
                 key = self.names[key]
             except KeyError:
-                return
-        if key in self:
+                return  # not deleted
+
+        try:
             i = self.map[key]
-            del self.items[i]
-            del self.map[key]
-            del self.names[key.name]
-            key._space_name_handles.remove(self.names)
-            for k, v in self.map.items():
-                if v >= i:
-                    self.map[k] = v - 1
+        except KeyError:
+            return  # not deleted
+
+        del self.items[i]
+        del self.map[key]
+        del self.names[key.name]
+        key._space_name_handles.remove(self._group_handle)
+        for k, v in self.map.items():
+            if v >= i:
+                self.map[k] = v - 1
+        return key  # sets return None but this can return value
 
     def _safe_clear(self):
         """
-        Remove all items from this Group.
+        implementation of clear method to be run safely
         """
+        names = self._group_handle
         for i in self.items:
-            i._space_name_handles.remove(self.names)
-        self.names.clear()
-        del self.items[:]
+            i._space_name_handles.remove(names)
+        self.items.clear()
+        names.clear()
         self.map.clear()
 
     def _safe_iter(self):
+        """
+        implementation of __iter__ method to be run safely
+        """
         return self.items
+
+    def reverse(self):
+        self.items.reverse()
+        # remap indexes
+        for i, key in enumerate(self.items):
+            self.map[key] = i
 
     def __reversed__(self):
         return reversed(self.items)

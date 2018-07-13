@@ -12,8 +12,10 @@ from builtins import object
 import sys
 
 # import third party modules
+import cv2
 import numpy as np
 from numbers import Number
+#from RRtoolbox.lib.arrayops import overlay
 
 # special variables
 # __all__ = []
@@ -81,6 +83,29 @@ def convert(points, roll=None, _type=np.int, shift=None, apply="contours"):
     return conv
 
 
+def norm_range(vec, lower=0, upper=255, type=int):
+    """
+    clips vector to range [lower, upper] and a tuple with integers
+
+    :param vec: vector
+    :param lower: 0
+    :param upper: 255
+    :param type: int
+    :return:
+    """
+    newvec = []
+    upper = type(upper)
+    lower = type(lower)
+    for i in vec:
+        if i > upper:
+            newvec.append(upper)
+        elif i < lower:
+            newvec.append(lower)
+        else:
+            newvec.append(type(i))
+    return tuple(newvec)
+
+
 def draw_contour_groups(contour_groups, shape=None, binary=False):
     """
     draw contours in separate colors
@@ -101,9 +126,9 @@ def draw_contour_groups(contour_groups, shape=None, binary=False):
         # get fitting shape
         shape = int(y), int(x)
     if binary:
-        img = np.zeros(shape)
+        img = np.zeros(shape[:2])
     else:
-        img = np.zeros(shape+(3,))
+        img = np.zeros(shape[:2]+(3,))
     vis = img.copy()
     for contours in contour_groups:
         if binary:

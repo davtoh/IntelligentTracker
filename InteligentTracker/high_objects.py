@@ -7,6 +7,7 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import absolute_import
 from builtins import object
+from past.builtins import basestring
 
 # import build-in modules
 import sys
@@ -14,14 +15,14 @@ from numbers import Number
 from time import time
 
 # import third party modules
-from .core import Space, Group
+#from RRtoolbox.lib.plotter import fastplt  # DEBUG
+from .core import Space, Group, Agent
 from .periferials import UnifiedCamera, SyncCameras, PiCamera
 from .detectors import Detector
 import numpy as np
-from threading import Thread, RLock
-from .forms import EventFigure
+from threading import Thread, RLock, Event
+from .forms import EventFigure, pause
 import cv2
-(cv_major_ver, cv_minor_ver, cv_subminor_ver) = cv2.__version__.split('.')
 
 # special variables
 # __all__ = []
@@ -42,60 +43,150 @@ class World(Space):
     def __init__(self):
         self.scenes = Group(_space_parent=self, name="scenes")
         self.detectors = Group(_space_parent=self, name="detectors")
+        
+    def _apply_func(self, func_name, names=None, **kwargs):
+        """
+        generic function to use from all the scenes
+        
+        :param func_name: generic function in the scenes
+        :param names: specific scenes
+        :param kwargs: arguments to pass
+        :return: 
+        """
+        if names is None:
+            for i in self.scenes:
+                getattr(i, func_name)(**kwargs)
+        elif isinstance(names, basestring):
+            getattr(self.scenes[names], func_name)(**kwargs)
+        else:
+            for name in names:
+                getattr(self.scenes[name], func_name)(**kwargs)
 
     def show(self, *args, **kwargs):
-        name = kwargs.pop("name", None)
-        if name is None:
-            for i in self.scenes:
-                i.show(*args, **kwargs)
+        self._apply_func("show", *args, **kwargs)
+    show.__doc__ = _apply_func.__doc__.replace("generic","show")
+
+    def block(self, names=None, window=True, close=True):
+        """
+        block until scenes are closed
+
+        :param names: specific scene names or they themselves.
+        :param window: True to block until windows are closed.
+            False to block until scenes are totally closed.
+        :param close: True to close totally scenes once unblocked.
+        :return:
+        """
+        if names is None:
+            scenes = self.scenes
+        elif isinstance(names, basestring):
+            scenes = [self.scenes[names]]
         else:
-            self.scenes[name].show(*args, **kwargs)
+            # only those scenes in world
+            scenes = [self.scenes[i] for i in names]
+
+        if window:
+            # only leave if all scenes windows are closed
+            conditions = [i.closed_window for i in scenes]
+        else:
+            # only leave if all scenes processes are closed
+            conditions = [i.closed for i in scenes]
+
+        while any((not i() for i in conditions)):
+            pause(0.1)  # check avery 0.1 seconds  # FIXME _tkinter.TclError: can't invoke "update" command: application has been destroyed
+
+        # close all specified scenes
+        if close:
+            for i in scenes:
+                i.close()
 
     def close(self, *args, **kwargs):
-        name = kwargs.pop("name", None)
-        if name is None:
-            for i in self.scenes:
-                i.close(*args, **kwargs)
-        else:
-            self.scenes[name].close(*args, **kwargs)
+        self._apply_func("close", *args, **kwargs)
+    close.__doc__ = _apply_func.__doc__.replace("generic","close")
 
     def compute(self, *args, **kwargs):
-        name = kwargs.pop("name", None)
-        if name is None:
-            for i in self.scenes:
-                i.compute(*args, **kwargs)
-        else:
-            self.scenes[name].compute(*args, **kwargs)
+        self._apply_func("compute", *args, **kwargs)
+    compute.__doc__ = _apply_func.__doc__.replace("generic","compute")
 
     def create_scene(self, *args, **kwargs):
+        """
+        create a scene in the world
+        
+        :param args: argument to pass to the scene
+        :param kwargs: keyword arguments to past to the scene
+        :return: scene
+        """
         scene = Scene(*args, **kwargs)
-        self.scenes.add(scene)
+        self.scenes.add_as_child(scene)
         return scene
 
-    def create_detector(self, *args, **kwargs):
-        detector = Detector(*args, **kwargs)
-        self.detectors.add(detector)
+    def create_detector(self, detector_type, *args, **kwargs):
+        """
+        create detector and assign it to the scenes
+        
+        :param detector_type: registered detector
+        :param args: argument to pass to the detector
+        :param kwargs: keyword arguments to past to the detector
+        :param scenes: keyword argument specifying the scenes where the 
+            detector is assigned. if None it is assigned to all the scenes.
+            If False it is not assigned to any particular scene.
+        :return: detector
+        """
+        scenes = kwargs.pop("scenes", None)
+        if scenes is None:
+            # assign all the available scenes
+            scenes = self.scenes
+        elif isinstance(scenes, (Scene, basestring)):
+            # test scene is in scenes
+            scenes = [self.scenes[scenes]]
+        elif scenes is False:
+            # specifically tells to not assign detector
+            scenes = []
+        else:
+            scenes = [self.scenes[i] for i in scenes]
+        
+        detector = Detector.get_detector(detector_type)(*args, **kwargs)
+        self.detectors.add_as_child(detector)
+        self.assign_detector_to_scenes(detector, scenes)
         return detector
 
-    def assign_detector_to_scene(self, detector_name, scene_name):
-        self.scenes[scene_name].add_detector(self.detectors[detector_name])
+    def assign_detector_to_scenes(self, detector, scenes):
+        """
+        add a detector to the scenes
+        
+        :param detector: 
+        :param scenes: a scene or list of scenes, either by object or name
+        :return: 
+        """
+        try:
+            for i in scenes:
+                self.scenes[i].add_detector(
+                    self.detectors[detector])
+        except TypeError:
+            self.scenes[scenes].add_detector(self.detectors[detector])
 
     def objects(self, detector_name=None, object_name=None):
+        """
+        iterate over objects in all the detectors
+        
+        :param detector_name: 
+        :param object_name: 
+        :return: 
+        """
         if detector_name is not None and object_name is not None:
             yield self.detectors[detector_name].objects[object_name]
         elif detector_name is None:
-            for detector in self.detectors:
-                if object_name is None:
+            if object_name is None:
+                for detector in self.detectors:
                     for obj in detector.objects:
                         yield obj
-                else:
+            else:
+                for detector in self.detectors:
                     try:
                         yield detector.objects[object_name]
                         break
                     except KeyError:
                         continue
-            else:
-                if object_name is not None:
+                else:
                     raise KeyError("object {} not found".format(object_name))
         else:
             for obj in self.detectors[detector_name].objects:
@@ -105,101 +196,11 @@ class World(Space):
         pass
 
 
-class Agent(Space):
-    """
-    Anything in the World, from here anything is derived and populated
-    in the world.
-    """
-    def __init__(self):
-        self._to_compute = False
-        self.active = False
-        self.visible = False
-        self.drawing = None
-        self.cnt = []
-        self.rotated_box = None
-
-    def compute(self):
-        pass
-
-    def computed_vis(self):
-        pass
-
-    def raw_vis(self):
-        pass
-
-    @staticmethod
-    def get_bounding_box_from_rotated_box(rotated_box, _type=None):
-        (tx, ty), (sz_x, sz_y), angle = rotated_box
-        # get half distance to center
-        x, y = sz_x / 2., sz_y / 2.
-        if _type is None:
-            return tx - x, ty - y, sz_x, sz_y
-        else:
-            return _type(tx - x), _type(ty - y), _type(sz_x), _type(sz_y)
-
-    @staticmethod
-    def get_rotated_box_from_bounding_box(bounding_box, _type=None):
-        x, y, sz_x, sz_y = bounding_box
-        # get half distance to center
-        tx, ty = sz_x / 2., sz_y / 2.
-        if _type is None:
-            return (x + tx, y + ty), (sz_x, sz_y), 0
-        else:
-            return ((_type(x + tx), _type(y + ty)),
-                    (_type(sz_x), _type(sz_y)), _type(0))
-
-    @staticmethod
-    def get_rotated_box_from_cnt(cnt, _type=None):
-        """
-        get a rotated box format (center, size, angle)
-        from a contour of N points.
-        """
-        if _type is None:
-            return cv2.minAreaRect(cnt)
-        else:
-            (cx, cy), (x, y), a = cv2.minAreaRect(cnt)
-            return (_type(cx), _type(cy)), (_type(x), _type(y)), _type(a)
-
-    @staticmethod
-    def get_cnt_from_rotated_box(rotated_box, _type=None):
-        """
-        get a contour of 4 points with format [left-top, right-top,
-        right-bottom, left-bottom] from a rotated box with format
-        (center, size, angle)
-        """
-        # format (x,y),(width,height),theta e.g. ((122, 239), (4, 4), 0)
-        (tx, ty), (sz_x, sz_y), angle = rotated_box
-        # get half distance to center
-        x, y = sz_x/2., sz_y/2.
-        # construct contour in origin
-        cnt_rect = np.array([((-x, -y),), ((x, -y),),
-                             ((x, y),), ((-x, y),)], np.float)#.reshape(-1, 1, 2)
-
-        # create transformation matrix to rotate and translate
-        # https://en.wikipedia.org/wiki/Transformation_matrix
-        a = angle * np.pi / 180.  # convert from degrees to radians
-        c = np.cos(a)
-        s = np.sin(a)
-        H = np.array([(c, -s, tx),
-                      (s, c, ty),
-                      (0, 0, 1)], np.float)
-
-        # apply transformation with desired type
-        # https://docs.opencv.org/2.4/modules/core/doc/operations_on_arrays.html#perspectivetransform
-        if _type is None:
-            return cv2.perspectiveTransform(cnt_rect, H)
-        else:
-            return _type(cv2.perspectiveTransform(cnt_rect, H))
-
-    def __json_enco__(self):
-        pass
-
-
 class Scene(Space):
     """
     This is a scene, specifically made to name places in the world
     and configure how the place is seen through the perspectives it can
-    see in the place (cameras)
+    observe in places (cameras)
     
     .. example::
         
@@ -213,22 +214,20 @@ class Scene(Space):
         scene.framerate = 5
         # close and stop scene processing
         scene.close()
-        # re-open scene vesualization and continue processing
+        # re-open scene visualization and continue processing
         scene.show()
 
     """
     def __init__(self, camera_ids=None, resolution=None, framerate=None,
-                 calibration_cubes=None, name=None):
+                 calibration_cubes=None):
         """
         
         :param camera_ids: 
         :param resolution: 
         :param framerate: 
-        :param calibration_cubes: 
-        :param name: 
+        :param calibration_cubes:
         """
         self.view = None
-        self.name = name
 
         try:
             camera_ids = list(camera_ids)
@@ -252,12 +251,24 @@ class Scene(Space):
         self.framerate = framerate
         self.calibration_cubes = calibration_cubes
         self.mask = None
-        self.areas = []
+        self.areas = Group(_space_parent=self, name="areas")
+        self.detectors = Group(_space_parent=self, name="detectors")
+        self.objects = Group(_space_parent=self, name="objects")
         self._stop = True
         self._computed_vis = None
         self._thread = None
         self._lock = RLock()
+        self._thread_free = Event()
+    
+    def add_detector(self, detector):
+        self.detectors.add_as_contained(detector)
 
+    def get_objects_from_coor(self, x, y):
+        pass
+
+    def get_zones_from_coor(self, x, y):
+        return []
+    
     @property
     def active(self):
         return not self._stop
@@ -307,7 +318,11 @@ class Scene(Space):
                 return self._apply_cube(self.sync_stream.capture())
         else:
             self.sync_stream.start()  # ensure it is started
-            return self._apply_cube(self.sync_stream.capture())
+            try:
+                return self._apply_cube(self.sync_stream.capture())
+            except Exception:
+                self.close()
+                raise
 
     def _apply_cube(self, captures, convert_func=None):
         if convert_func:
@@ -315,17 +330,17 @@ class Scene(Space):
         else:
             return np.hstack(captures)
 
-    def _name_event(self):
+    def _name_changed_event(self, old_name):
         if self.view is not None:
-            self.view.set_title(self.name)
+            self.view.title = self.name
 
-    def show(self, start=True):
+    def show(self, start=True, throw=True):
         """
         creates a window to visualize the scene
         """
         # start processing
         if start:
-            self.start()
+            self.start(throw=throw)
 
         # create view if None
         if self.view is None:
@@ -335,16 +350,21 @@ class Scene(Space):
                     # _computed_vis is the computed visualization 
                     # at any given frame and if it is None it will
                     # not update the animation in the window
-                    #t = time()
-                    #print("Visualization taken in {}".format(t-self.view._time))
-                    #self.view._time = t
-                    return self._computed_vis
-            
+                    return cv2.cvtColor(self._computed_vis, cv2.COLOR_BGR2RGB)
+
+                def key_press_event(selfo, event):
+                    if event.key == 'q':
+                        selfo.close()
+                    if event.key == 'd':
+                        self.objects.clear_in_space()
+                        #for d in self.detectors:
+                        #    d.objects.clear()
+
             # interval can be any value but if it is 0 it is stopped
             # the refreshing of the window is determined by the self.framerate
-            self.view = View(self.computed_vis(), interval=1000//self.framerate,
+            vis = cv2.cvtColor(self.computed_vis(), cv2.COLOR_BGR2RGB)
+            self.view = View(vis, interval=1000//self.framerate,
                              blit=False, title=self.name)
-            self.view._time = time()
 
         self._computed_vis.astype(np.uint8)  # test vis
         # show window
@@ -355,31 +375,58 @@ class Scene(Space):
         # process image to follow and detect objects in scene
         if frame is None:
             frame = self.raw_vis()
+        self.mask = np.zeros(frame.shape[:2])
         # process frame
-        frame_processed = frame
+        frame_processed = frame.copy()
+
+        # tracks all the objects on a unspoiled frame
+        for d in self.detectors:
+            objs = d._compute_objects(frame, self.mask, _debug_good=frame_processed,
+                               _debug_bad=None)
+            # add new object to the scene objects' group
+            self.objects.update(objs, as_contained=True)
+            # draws all the tails on the frame
+            for o in d.tracked_objects():
+                o.in_zones = self.get_zones_from_coor(*o.position[:2])
+                if not self.closed_window() and o.visible:
+                    o.draw_circle(frame_processed)
+                    o.draw_tail(frame_processed)
+
         self._computed_vis = frame_processed
         return frame_processed
 
-    def update(self):
+    def _update_func(self):
+        #print("thread {} started".format(self._thread))
         # start streaming and computing
         try:
             with self.sync_stream:
-                for images in self.sync_stream.capture_continuous():
+                to_iter = self.sync_stream.capture_continuous()
+                # first iteration to test it is working
+                self.compute(self._apply_cube(next(to_iter)))
+                # thread is ready
+                self._thread_free.set()
+                # keep on
+                for images in to_iter:
                     self.compute(self._apply_cube(images))
                     if self._stop:
                         break
         finally:
             self._stop = True
-            print("thread {} ended".format(self))
+            self._thread_free.set()
+            #print("thread {} ended".format(self._thread))
 
-    def start(self):
+    def start(self, throw=True):
         # start the thread to read frames from the video stream
         with self._lock:
             if self._thread is None or not self._thread.is_alive():
-                self._thread = t = Thread(target=self.update, args=())
+                self._thread = t = Thread(target=self._update_func, args=())
                 t.daemon = False
                 self._stop = False  # thread started
+                self._thread_free.clear()
                 t.start()
+                self._thread_free.wait()
+                if self._stop and throw:
+                    raise Exception("scene '{}' did not start".format(self))
         return self
 
     def close(self, window=True):
@@ -390,7 +437,9 @@ class Scene(Space):
                 self._last_frame = self._computed_vis
             if self._thread is not None and self._thread.is_alive():
                 self._stop = True
-                self._thread.join()
+                self._thread.join(10)  # this can block forever
+                if self._thread.is_alive():
+                    raise Exception("Thread didn't close")
 
     def close_window(self):
         if self.view:
@@ -402,7 +451,7 @@ class Scene(Space):
     
     def closed_window(self):
         if self.view:
-            self.view.is_closed()
+            return self.view.closed()
         return True  # if there is not view the it is closed
 
     def __enter__(self):
@@ -433,30 +482,3 @@ class Line(Agent):
     it just tells when an object passes from one side to the other.
     """
     pass
-
-
-class Object(Agent):
-    """
-    It is any entity in the World that has its own characteristics or
-    features and that can be tracked in the real world.
-    """
-    def __init__(self, tracker_type='MEDIANFLOW'):
-        super(Object, self).__init__()
-
-        tracker_type = tracker_type.upper()
-        if int(cv_minor_ver) < 3:
-            tracker = cv2.Tracker_create(tracker_type)
-        else:
-            if tracker_type == 'BOOSTING':
-                tracker = cv2.TrackerBoosting_create()
-            if tracker_type == 'MIL':
-                tracker = cv2.TrackerMIL_create()
-            if tracker_type == 'KCF':
-                tracker = cv2.TrackerKCF_create()
-            if tracker_type == 'TLD':
-                tracker = cv2.TrackerTLD_create()
-            if tracker_type == 'MEDIANFLOW':
-                tracker = cv2.TrackerMedianFlow_create()
-            if tracker_type == 'GOTURN':
-                tracker = cv2.TrackerGOTURN_create()
-        self.tracker = tracker
