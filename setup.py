@@ -16,7 +16,13 @@ import io
 import os
 import re
 from glob import glob
-from pip.req import parse_requirements
+
+
+def parse_requirements(filename):
+    """ load requirements from a pip requirements file """
+    # https://github.com/capless/warrant/issues/96
+    lineiter = (line.strip() for line in open(filename))
+    return [line for line in lineiter if line and not line.startswith("#")]
 
 try:
     from setuptools import setup, find_packages
@@ -52,8 +58,6 @@ def find_version(*file_paths):
 print(sys.version) # version of python
 
 here = os.path.abspath(os.path.dirname(__file__))
-homedir = os.environ['HOME']
-username = os.path.split(homedir)[-1]
 init_file = '__init__.py'
 package = ""
 here, pkg_lst, files_list = next(os.walk(here))
@@ -86,18 +90,17 @@ for f_name in readmes:
 
 install_requires = []
 for f_name in glob(os.path.join(here, 'requirements*')):
-    install_reqs = parse_requirements(f_name, session='hack')
-    install_requires.extend([str(ir.req) for ir in install_reqs])
+    install_requires.extend(parse_requirements(f_name))
 
 setup(
     name=package,
-    description="Local package {}".format(package),
+    description="Install {}".format(package),
     version=version,
-    author=username,
-    author_email="",
-    url="",
+    author='David Toro',
+    author_email="davsamirtor@gmail.com",
+    url="https://github.com/davtoh/InteligentTracker",
     packages=packages,
-    license="",
+    license="GPL v3",
     long_description=long_description,
     # see complete list https://pypi.python.org/pypi?%3Aaction=list_classifiers
     classifiers=[
@@ -106,24 +109,19 @@ setup(
         'Intended Audience :: Education',
         'Intended Audience :: Science/Research',
         'Intended Audience :: End Users/Desktop',
-        'License :: OSI Approved :: BSD License',
+        'License :: OSI Approved :: GNU General Public License v3 (GPLv3)',
         'Natural Language :: English',
         'Operating System :: POSIX :: Linux',
         'Operating System :: Microsoft :: Windows',
         #'Operating System :: MacOS :: MacOS X',
         'Programming Language :: Python',
-        'Programming Language :: Python :: 2',
-        'Programming Language :: Python :: 2.7',
-        'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.2',
-        'Programming Language :: Python :: 3.3',
-        'Programming Language :: Python :: 3.4',
         'Programming Language :: Python :: 3.5',
+        'Programming Language :: Python :: 3.6',
         'Topic :: Education',
         'Topic :: Software Development :: Libraries',
         'Topic :: Software Development :: Libraries :: Python Modules',
     ],
-    keywords='',
+    keywords='tracker object face color shape recognition scenes visual world',
     platforms='any',
     install_requires=install_requires,
     scripts=script_list,

@@ -34,9 +34,9 @@ __email__ = "davsamirtor@gmail.com"
 #__status__ = "Pre-release"
 
 import unittest
-from InteligentTracker.core import (WeakWatcherDictionary, WeakWatcher,
-                                    WeakRefDictionary, WeakWatcherWithData,
-                                    ref, Group, CompleteGroup, Agent)
+from IntelligentTracker.core import (WeakWatcherDictionary, WeakWatcher,
+                                     WeakRefDictionary, WeakWatcherWithData,
+                                     ref, Group, CompleteGroup, Agent)
 import gc
 
 

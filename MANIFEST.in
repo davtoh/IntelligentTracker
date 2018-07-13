@@ -1,0 +1,9 @@
+# Include the license file
+include LICENSE.rst README.rst
+
+# Include the examples files
+recursive-include examples *.py
+
+# Include the tests files
+recursive-exclude tests * # exclude all test data for better control
+#recursive-include tests *.py # only scripts

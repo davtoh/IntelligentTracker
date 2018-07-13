@@ -26,7 +26,7 @@ __email__ = "davsamirtor@gmail.com"
 
 import unittest
 import numpy as np
-from InteligentTracker.forms import EventFigure
+from IntelligentTracker.forms import EventFigure
 
 
 class MyTestCase(unittest.TestCase):
