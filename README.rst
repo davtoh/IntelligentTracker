@@ -61,31 +61,21 @@ Testing and application
 
 This project provides unittest tests under the tests/ folder. As an example we can see the tracker in action:
 
-:download:`example1 <./_static/Scene1_f1.jpg>`
-
 .. figure:: https://github.com/davtoh/intelligent-tracker/blob/master/documentation/_static/Scene1_f1.jpg
     :align: center
     :scale: 5%
-
-:download:`example2 <./_static/Scene1_f2.jpg>`
 
 .. figure:: https://github.com/davtoh/intelligent-tracker/blob/master/documentation/_static/Scene1_f2.jpg
     :align: center
     :scale: 5%
 
-:download:`example3 <./_static/Scene1_f3.jpg>`
-
 .. figure:: https://github.com/davtoh/intelligent-tracker/blob/master/documentation/_static/Scene1_f3.jpg
     :align: center
     :scale: 5%
 
-:download:`example4 <./_static/Scene1_f4.jpg>`
-
 .. figure:: https://github.com/davtoh/intelligent-tracker/blob/master/documentation/_static/Scene1_f4.jpg
     :align: center
     :scale: 5%
-
-:download:`example5 <./_static/Scene1_f5.jpg>`
 
 .. figure:: https://github.com/davtoh/intelligent-tracker/blob/master/documentation/_static/Scene1_f5.jpg
     :align: center
