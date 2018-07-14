@@ -1310,8 +1310,8 @@ def cnt_intersection(cnt0, cnt1):
             completeness.create_associations()
     except IncompleteAssociations:
         # this is for debugging
-        from IntelligentTracker.figures import interactive_points
-        from IntelligentTracker.array_utils import draw_contour_groups
+        from intelligent_tracker.figures import interactive_points
+        from intelligent_tracker.array_utils import draw_contour_groups
         interactive_points(draw_contour_groups([[cnt0], [cnt1]]), lines+conns)
         completeness.create_associations()
         raise

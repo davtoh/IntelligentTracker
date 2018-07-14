@@ -13,8 +13,8 @@ import sys
 
 # import third party modules
 import unittest
-from IntelligentTracker.geometry import line_intersection, intersect_analytical
-from IntelligentTracker.array_utils import check_contours, convert
+from intelligent_tracker.geometry import line_intersection, intersect_analytical
+from intelligent_tracker.array_utils import check_contours, convert
 import numpy as np
 
 # special variables

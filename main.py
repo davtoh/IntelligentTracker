@@ -36,8 +36,8 @@ def trace_calls(frame, event, arg):
 import sys
 
 # import third party modules
-from IntelligentTracker.high_objects import Scene, World, Space
-from IntelligentTracker.forms import EventFigure
+from intelligent_tracker.high_objects import Scene, World, Space
+from intelligent_tracker.forms import EventFigure
 import matplotlib.pyplot as plt
 #import pympler.asizeof  # https://stackoverflow.com/a/1816648/5288758
 

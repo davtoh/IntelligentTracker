@@ -1,5 +1,5 @@
 
-IntelligentTracker  |build-status| |docs|
+Intelligent Tracker  |build-status| |docs|
 =========================================================
 
 Overview
@@ -19,8 +19,8 @@ with a CCTV system and to not obscure users of what information is being process
 
 Latest:
 
-    - Documentation: http://intelligenttracker.readthedocs.io/
-    - Project Homepage: https://github.com/davtoh/IntelligentTracker
+    - Documentation: http://intelligent-tracker.readthedocs.io/
+    - Project Homepage: https://github.com/davtoh/intelligent-tracker
 
 Licence:
 
@@ -48,7 +48,23 @@ latest 3.x version.
 
 Once successfully installed you can import it in python as:
 
-    >>>> import IntelligentTracker as itt
+    >>>> import intelligent_tracker as itt
+
+
+openCV (it can take some time). Bear in mind that for Linux it downloads the
+latest 3.x version.
+
+Once successfully installed you can import it in python as:
+
+    >>>> import intelligent_tracker as itt
+
+
+openCV (it can take some time). Bear in mind that for Linux it downloads the
+latest 3.x version.
+
+Once successfully installed you can import it in python as:
+
+    >>>> import intelligent_tracker as itt
 
 Releases
 ========
@@ -61,16 +77,19 @@ Testing and application
 
 This project provides unittest tests under the tests/ folder. As an example we can see the tracker in action:
 
-.. figure:: https://github.com/davtoh/IntelligentTracker/blob/master/static/Scene1_f1.png
+.. figure:: https://github.com/davtoh/intelligent-tracker/blob/master/documentation/_static/Scene1_f1.png
     :align: center
     :scale: 5%
-.. figure:: https://github.com/davtoh/IntelligentTracker/blob/master/static/Scene1_f2.png
+.. figure:: https://github.com/davtoh/intelligent-tracker/blob/master/documentation/_static/Scene1_f2.png
     :align: center
     :scale: 5%
-.. figure:: https://github.com/davtoh/IntelligentTracker/blob/master/static/Scene1_f3.png
+.. figure:: https://github.com/davtoh/intelligent-tracker/blob/master/documentation/_static/Scene1_f3.png
     :align: center
     :scale: 5%
-.. figure:: https://github.com/davtoh/IntelligentTracker/blob/master/static/Scene1_f4.png
+.. figure:: https://github.com/davtoh/intelligent-tracker/blob/master/documentation/_static/Scene1_f4.png
+    :align: center
+    :scale: 5%
+.. figure:: https://github.com/davtoh/intelligent-tracker/blob/master/documentation/_static/Scene1_f5.png
     :align: center
     :scale: 5%
 
@@ -83,17 +102,17 @@ Open your console and type ``python main.py``
 - Contributions and bug reports are appreciated.
 - author: David Toro
 - e-mail: davsamirtor@gmail.com
-- project: https://github.com/davtoh/IntelligentTracker
+- project: https://github.com/davtoh/intelligent-tracker
 
-.. _Licence: https://github.com/davtoh/IntelligentTracker/LICENSE.rst
+.. _Licence: https://github.com/davtoh/intelligent-tracker/LICENSE.rst
 .. _Python: http://python.org/
 .. _Sphinx: http://sphinx-doc.org/
 .. _pyinstaller: http://www.pyinstaller.org/
 .. |build-status| image:: https://travis-ci.org/pyserial/pyserial.svg?branch=master
-   :target: https://github.com/davtoh/IntelligentTracker/releases
+   :target: https://github.com/davtoh/intelligent-tracker/releases
    :alt: Build status
 .. |docs| image:: https://readthedocs.org/projects/pyserial/badge/?version=latest
-   :target: http://intelligenttracker.readthedocs.io/
+   :target: http://intelligent-tracker.readthedocs.io/
    :alt: Documentation
 .. _`Unofficial Windows Binaries for Python`: http://www.lfd.uci.edu/~gohlke/pythonlibs/
-.. _`OpenCV linux installation`: https://github.com/davtoh/IntelligentTracker/blob/master/install_opencv.sh
+.. _`OpenCV linux installation`: https://github.com/davtoh/intelligent-tracker/blob/master/install_opencv.sh
