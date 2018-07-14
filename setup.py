@@ -83,7 +83,7 @@ packages = find_packages(exclude=[])
 print("Packages to include {}".format(packages))  # package includes
 
 # Get the long description from the README file
-long_description = "Automatically generated package from '{}'\n\n".format(here)
+long_description = ""
 readmes = glob(os.path.join(here, 'README*'))+glob(os.path.join(here, 'readme*'))
 for f_name in readmes:
     long_description += read(f_name) + "\n\n"

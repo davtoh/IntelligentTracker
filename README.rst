@@ -50,22 +50,6 @@ Once successfully installed you can import it in python as:
 
     >>>> import intelligent_tracker as itt
 
-
-openCV (it can take some time). Bear in mind that for Linux it downloads the
-latest 3.x version.
-
-Once successfully installed you can import it in python as:
-
-    >>>> import intelligent_tracker as itt
-
-
-openCV (it can take some time). Bear in mind that for Linux it downloads the
-latest 3.x version.
-
-Once successfully installed you can import it in python as:
-
-    >>>> import intelligent_tracker as itt
-
 Releases
 ========
 
@@ -77,19 +61,33 @@ Testing and application
 
 This project provides unittest tests under the tests/ folder. As an example we can see the tracker in action:
 
-.. figure:: https://github.com/davtoh/intelligent-tracker/blob/master/documentation/_static/Scene1_f1.png
+:download:`example1 <./_static/Scene1_f1.jpg>`
+
+.. figure:: https://github.com/davtoh/intelligent-tracker/blob/master/documentation/_static/Scene1_f1.jpg
     :align: center
     :scale: 5%
-.. figure:: https://github.com/davtoh/intelligent-tracker/blob/master/documentation/_static/Scene1_f2.png
+
+:download:`example2 <./_static/Scene1_f2.jpg>`
+
+.. figure:: https://github.com/davtoh/intelligent-tracker/blob/master/documentation/_static/Scene1_f2.jpg
     :align: center
     :scale: 5%
-.. figure:: https://github.com/davtoh/intelligent-tracker/blob/master/documentation/_static/Scene1_f3.png
+
+:download:`example3 <./_static/Scene1_f3.jpg>`
+
+.. figure:: https://github.com/davtoh/intelligent-tracker/blob/master/documentation/_static/Scene1_f3.jpg
     :align: center
     :scale: 5%
-.. figure:: https://github.com/davtoh/intelligent-tracker/blob/master/documentation/_static/Scene1_f4.png
+
+:download:`example4 <./_static/Scene1_f4.jpg>`
+
+.. figure:: https://github.com/davtoh/intelligent-tracker/blob/master/documentation/_static/Scene1_f4.jpg
     :align: center
     :scale: 5%
-.. figure:: https://github.com/davtoh/intelligent-tracker/blob/master/documentation/_static/Scene1_f5.png
+
+:download:`example5 <./_static/Scene1_f5.jpg>`
+
+.. figure:: https://github.com/davtoh/intelligent-tracker/blob/master/documentation/_static/Scene1_f5.jpg
     :align: center
     :scale: 5%
 
