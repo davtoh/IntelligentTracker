@@ -19,10 +19,10 @@ __author__ = "David Toro"
 # __copyright__ = "Copyright 2017, The <name> Project"
 # __credits__ = [""]
 __license__ = "GPL"
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 __maintainer__ = "David Toro"
 __email__ = "davsamirtor@gmail.com"
-# __status__ = "Pre-release"
+__status__ = "Pre-release"
 
 
 class ContextSupport(object):

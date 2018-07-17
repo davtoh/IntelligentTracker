@@ -1,0 +1,12 @@
+build:
+  image: latest
+
+python:
+  version: 3.6
+  setup_py_install: false
+  pip_install: true
+
+formats:
+    - pdf
+
+requirements_file: requirements.txt
