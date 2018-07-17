@@ -5,7 +5,6 @@
 
 Welcome to intelligent-tracker's documentation!
 ===============================================
-.. include:: ../README.rst
 
 Contents
 ========
