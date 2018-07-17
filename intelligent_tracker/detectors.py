@@ -33,7 +33,10 @@ __email__ = "davsamirtor@gmail.com"
 # __status__ = "Pre-release"
 
 SCRIPT_PATH = os.path.dirname(os.path.realpath(__file__))  # get current file path
-DETECTOR_PATH = os.path.join(SCRIPT_PATH, "./haarcascades/")  # ""/usr/local/share/OpenCV/haarcascades/"
+try:
+    DETECTOR_PATH = cv2.data.haarcascades  # comes with "pip install opencv-contrib-python"
+except AttributeError:
+    DETECTOR_PATH = os.path.join(SCRIPT_PATH, "./haarcascades/")  # "/usr/local/share/OpenCV/haarcascades/"
 face_cascade = cv2.CascadeClassifier(os.path.abspath(os.path.join(DETECTOR_PATH, 'haarcascade_frontalface_default.xml')))
 eye_cascade = cv2.CascadeClassifier(os.path.abspath(os.path.join(DETECTOR_PATH, 'haarcascade_eye.xml')))
 
